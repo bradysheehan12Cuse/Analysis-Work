@@ -1,0 +1,992 @@
+---
+title: "ist407finalproject"
+output: html_document
+---
+SVM MODEL
+```{r}
+library(dplyr)
+library(rpart.plot)
+library(rpart)
+library(caret)
+library(ggplot2)
+library(e1071)
+library(arules)
+library(arulesViz)
+```
+```{r}
+Maths3 <- read.delim("Maths3.csv")
+```
+
+
+
+```{r}
+colnames(Maths3)
+```
+
+```{r}
+table(is.na(Maths3))
+```
+```{r}
+Mathdata<- Maths3
+```
+
+```{r}
+Mathdata$GPA <- cut(Mathdata$GPA,
+                      breaks = c(0, 5, 10, 15, 20),
+                      labels = c('lowGPA', 'AverageGPA', 'highGPA', 'very_highGPA'))
+head(Mathdata)
+copyMathdata <- Mathdata
+```
+```{r}
+myvars <- c("Dalc", "Walc", "studytime", "famrel", "health", "absences", "romantic", "internet", "GPA")
+newcopyMathdata<- copyMathdata[myvars]
+head(newcopyMathdata)
+
+
+```
+```{r}
+newcopyMathdata$Dalc<- as.factor(newcopyMathdata$Dalc)
+newcopyMathdata$Walc<- as.factor(newcopyMathdata$Walc)
+newcopyMathdata$studytime<- as.factor(newcopyMathdata$studytime)
+newcopyMathdata$famrel<- as.factor(newcopyMathdata$famrel)
+newcopyMathdata$health<- as.factor(newcopyMathdata$health)
+newcopyMathdata$absences <- as.factor(newcopyMathdata$absences)
+newcopyMathdata$romantic <- as.factor(newcopyMathdata$romantic)
+newcopyMathdata$internet <- as.factor(newcopyMathdata$internet)
+```
+
+```{r}
+str(newcopyMathdata)
+```
+```{r}
+very_highGPA.newcopyMathdata = apriori(data = newcopyMathdata,
+                                 parameter=list(supp = 0.005,
+                                                conf = 0.60),
+                                 appearance = list(default = 'lhs',
+                                                   rhs = 'GPA=very_highGPA'),
+                                 control = list(verbose=F))
+
+inspect(very_highGPA.newcopyMathdata)
+```
+
+```{r}
+GPArules = sort(very_highGPA.newcopyMathdata,
+             by = 'confidence', 
+             decreasing = TRUE)
+
+# look at the first 10 rules, ranked by confidence
+inspect(GPArules[1:10])
+```
+```{r}
+?apriori
+```
+
+
+```{r}
+plot(GPArules,
+     method = 'scatterplot')
+```
+
+
+SVM MODEL
+```{r}
+library(tidyverse) # for data manipulation
+library(rsample)  # data splitting
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(kernlab)) # for SVM
+library(e1071) # also for SVM
+suppressPackageStartupMessages(library(randomForest))
+library(rsample)
+library(RColorBrewer) # customized coloring of plots
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(gridExtra)
+library(alluvial)
+library(extrafont)
+```
+
+```{r}
+
+math <- read.csv('/Users/tori-ann/Documents/Fall 2022/math.csv')
+
+math <- na.omit(math)
+
+##Data Prepping
+
+math = math |> 
+  mutate_if(is.character, as.factor)
+
+math$GPA <- cut(math$GPA,
+                breaks = c(0, 5, 10, 15, 20),
+                labels = c('lowGPA', 'AverageGPA', 'highGPA', 'very_highGPA'))
+
+math = math |>
+mutate(absences = case_when(
+   absences >= 10 ~ 'Very High',
+   absences >= 8 ~ "High" ,
+   absences >= 6 ~ 'Medium',
+   absences >= 4 ~ "Low",
+   absences >= 2 ~ 'Very Low',
+   absences <= 0 ~ 'No Absence'
+  ))
+
+math$Walc <- as.factor(math$Walc)
+math$Walc <- mapvalues(math$Walc,
+                       from = 1:5,
+                       to = c("Very Low", "Low", "Medium", "High", "Very High")
+                      )
+
+math$Dalc <- as.factor(math$Dalc)
+math$Dalc <- mapvalues(math$Dalc,
+                        from = 1:5,
+                        to = c("Very Low", "Low", "Medium", "High", "Very High"))
+
+math$famrel <- as.factor(math$famrel)
+math$famrel <- mapvalues(math$famrel,
+                from = 1:5,
+                to = c("Very Low", "Low", "Medium", "High", "Very High"))
+
+math$studytime <- as.factor (math$studtime)
+math$studytime <- mapvalues(math$studytime,
+                  from = 1:4,
+                  to = c("Very Low", "Low", "Medium", "High"))
+
+math$health <- as.factor(math$health)
+math$health <- mapvalues (math$health,
+          from = 1:5,
+          to = c("Very Low", "Low", "Medium", "High", "Very High"))
+
+#Data Processing
+intrain <- createDataPartition(y = math$GPA, p= 0.7, list = FALSE)
+train <- na.omit(math[intrain,])
+test <- na.omit(math[-intrain,])
+
+# plot data
+ggplot(data = math, aes(x =activities, y = GPA , color = school, shape =school)) + 
+  geom_point(size = 2) +
+  scale_color_manual(values=c('#000000', '#FF0000'))
+
+#SVM
+
+### Tune Parameters for SVM
+
+### SVM with Linear Kernel
+search.grid = expand.grid(C = seq(0.1, 2, length = 20))
+
+# set up 3-fold cross validation 10 times
+train.control = trainControl(
+  method = 'repeatedcv', 
+  number = 3,
+  repeats = 10
+)
+
+
+###
+svm.m1 = train(Dalc ~.,
+               data = train,
+               method = 'svmLinear',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+# performance results for the top 5 models
+svm.m1$results |>  
+  top_n(5, wt = Accuracy) |> 
+  arrange(desc(Accuracy))
+
+# results for the best model
+confusionMatrix(svm.m1)
+
+pred = predict(svm.m1, newdata = test)
+confusionMatrix(pred, test$Dalc)
+
+### SVM with Polynomial Kernel
+
+search.grid = expand.grid(degree = c(1, 2, 3),
+                          scale = c(0.001, 0.01, 0.1, 1.0),
+                          C = seq(0.1, 2, length = 20))
+
+
+svm.m2 = train(romantic ~.,
+              data = train,
+               method = 'svmPoly',
+              trControl = train.control,
+                tuneGrid = search.grid)
+
+# performance results for the top 5 models
+svm.m2$results |>  
+  top_n(5, wt = Accuracy) |> 
+  arrange(desc(Accuracy))
+
+# results for the best model
+confusionMatrix(svm.m2)
+
+pred2 = predict(svm.m2, newdata = test)
+confusionMatrix(pred2, test$romantic)
+
+### SVM with Radial Kernel
+
+
+search.grid = expand.grid(sigma = seq(0.1, 2, length = 20),
+                          C = seq(0.1, 2, length = 20))
+
+##Romantic
+svm.m3 = train(romantic ~.,
+              data = train,
+              method = 'svmRadial',
+              trControl = train.control,
+               tuneGrid = search.grid)
+
+# performance results for the top 5 models
+svm.m3$results |>  
+  top_n(5, wt = Accuracy) |> 
+  arrange(desc(Accuracy))
+
+# results for the best model
+confusionMatrix(svm.m3)
+
+pred3 = predict(svm.m3, newdata = test)
+confusionMatrix(pred3, test$romantic)
+
+
+#DALC
+
+svm.m4 = train(Dalc ~.,
+               data = train,
+               method = 'svmRadial',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+confusionMatrix(svm.m4)
+
+pred1 = predict(svm.m4, newdata = test)
+confusionMatrix(pred, test$Dalc)
+
+#####Walc
+
+svm.m5 = train(Walc ~.,
+               data = train,
+               method = 'svmRadial',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+
+confusionMatrix(svm.m5)
+pred4 = predict(svm.m5, newdata = test)
+confusionMatrix(pred4, test$Walc)
+
+#######famrel
+
+svm.m6 = train(famrel ~.,
+               data = train,
+               method = 'svmRadial',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+pred5 = predict(svm.m6, newdata = test)
+confusionMatrix(pred5, test$famrel)
+
+#######internet
+
+svm.m7 = train(internet ~.,
+               data = train,
+               method = 'svmRadial',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+pred6 = predict(svm.m7, newdata = test)
+confusionMatrix(pred6, test$internet)
+
+#######absences
+
+svm.m8 = train(absences ~.,
+               data = train,
+               method = 'svmRadial',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+pred7 = predict(svm.m8, newdata = test)
+confusionMatrix(pred7, test$absences)
+
+
+#######health
+
+svm.m9 = train(health ~.,
+               data = train,
+               method = 'svmRadial',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+pred6 = predict(svm.m9, newdata = test)
+confusionMatrix(pred6, test$health)
+
+#######studytime
+
+svm.m10 = train(studytime ~.,
+               data = train,
+               method = 'svmRadial',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+pred7 = predict(svm.m10, newdata = test)
+confusionMatrix(pred7, test$studytime)
+
+
+#Top 2 variables
+
+grid <- expand.grid(C = c(0,0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,5))
+
+#internet
+svm_Linear_Grid <- train(internet ~., data = train, method = "svmLinear",
+                         trControl=train.control,
+                         preProcess = c("center", "scale"),
+                         tuneGrid = grid,
+                         tuneLength = 10)
+svm_Linear_Grid
+confusionMatrix(svm_Linear_Grid)
+plot(svm_Linear_Grid)
+
+#Dalc
+svm_Linear_Grid2 <- train(Dalc ~., data = train, method = "svmLinear",
+                         trControl=train.control,
+                         preProcess = c("center", "scale"),
+                         tuneGrid = grid,
+                         tuneLength = 10)
+svm_Linear_Grid2
+confusionMatrix(svm_Linear_Grid2)
+plot(svm_Linear_Grid2)
+```
+
+ 
+DECISION TREE
+```{r}
+library(tidyverse)
+library(caret)    
+library(rsample)
+```
+
+
+```{r}
+choose.dir()
+setwd("C:\\Users\\corso\\OneDrive\\Desktop\\IST407\\FInal")
+
+choose.files()
+y<-read.csv("C:\\Users\\corso\\OneDrive\\Desktop\\IST407\\FInal\\Maths.csv")
+
+myvars<-c("Dalc","Walc","romantic","famrel","G.avg","internet","absences","health","studytime")
+
+x<-select(y, myvars)
+
+x$Dalc<-as.factor(x$Dalc)
+x$Walc<-as.factor(x$Walc)
+x$romantic<-as.factor(x$romantic)
+x$famrel<-as.factor(x$famrel)
+x$internet<-as.factor(x$internet)
+x$health<-as.factor(x$health)
+x$studytime<-as.factor(x$studytime)
+
+unique(x$G.avg)
+
+x$G.avg[x$G.avg==5.666666667]<-0
+x$G.avg[x$G.avg==5.333333333]<-0
+x$G.avg[x$G.avg==8.333333333]<-0
+x$G.avg[x$G.avg==14.66666667]<-1
+x$G.avg[x$G.avg==8.666666667]<-0
+x$G.avg[x$G.avg==15]<-1
+x$G.avg[x$G.avg==11.66666667]<-0
+x$G.avg[x$G.avg==17.66666667]<-1
+x$G.avg[x$G.avg==9]<-0
+x$G.avg[x$G.avg==11.33333333]<-0
+x$G.avg[x$G.avg==14]<-1
+x$G.avg[x$G.avg==10.33333333]<-0
+x$G.avg[x$G.avg==15.33333333]<-1
+x$G.avg[x$G.avg==13.66666667]<-1
+x$G.avg[x$G.avg==9.333333333]<-0
+x$G.avg[x$G.avg==12.66666667]<-1
+x$G.avg[x$G.avg==7.666666667]<-0
+x$G.avg[x$G.avg==11]<-0
+x$G.avg[x$G.avg==10.66666667]<-0
+x$G.avg[x$G.avg==16.66666667]<-1
+x$G.avg[x$G.avg==16.33333333]<-1
+x$G.avg[x$G.avg==10]<-0
+x$G.avg[x$G.avg==7]<-0
+x$G.avg[x$G.avg==13.33333333]<-1
+x$G.avg[x$G.avg==12]<-1
+x$G.avg[x$G.avg==18.33333333]<-1
+x$G.avg[x$G.avg==9.666666667]<-0
+x$G.avg[x$G.avg==7.333333333]<-0
+x$G.avg[x$G.avg==19.33333333]<-1
+x$G.avg[x$G.avg==12.33333333]<-1
+x$G.avg[x$G.avg==15.66666667]<-1
+x$G.avg[x$G.avg==6.666666667]<-0
+x$G.avg[x$G.avg==16]<-1
+x$G.avg[x$G.avg==14.33333333]<-1
+x$G.avg[x$G.avg==6.333333333]<-0
+x$G.avg[x$G.avg==5]<-0
+x$G.avg[x$G.avg==8]<-0
+x$G.avg[x$G.avg==17]<-1
+x$G.avg[x$G.avg==13]<-1
+x$G.avg[x$G.avg==17.33333333]<-1
+x$G.avg[x$G.avg==18.66666667]<-1
+x$G.avg[x$G.avg==3.666666667]<-0
+x$G.avg[x$G.avg==18]<-1
+x$G.avg[x$G.avg==4]<-0
+x$G.avg[x$G.avg==2.666666667]<-0
+x$G.avg[x$G.avg==3]<-0
+x$G.avg[x$G.avg==3.333333333]<-0
+x$G.avg[x$G.avg==1.333333333]<-0
+x$G.avg[x$G.avg==1.666666667]<-0
+x$G.avg[x$G.avg==4.333333333]<-0
+x$G.avg[x$G.avg==2.333333333]<-0
+x$G.avg[x$G.avg==6]<-0
+x$G.avg[x$G.avg==4.666666667]<-0
+x$G.avg[x$G.avg==2]<-0
+
+x$G.avg<-as.factor(x$G.avg)
+
+unique(x$absences)
+
+quantile(x$absences)
+
+x$absences[x$absences==6]<- 0
+x$absences[x$absences==4]<- 0
+x$absences[x$absences==10]<- 0
+x$absences[x$absences==2]<- 0
+x$absences[x$absences==0]<- 0
+x$absences[x$absences==16]<-1
+x$absences[x$absences==14]<-1
+x$absences[x$absences==7]<- 0
+x$absences[x$absences==8]<- 0
+x$absences[x$absences==25]<-1
+x$absences[x$absences==12]<-1
+x$absences[x$absences==54]<-1
+x$absences[x$absences==18]<-1
+x$absences[x$absences==26]<-1
+x$absences[x$absences==20]<-1
+x$absences[x$absences==56]<-1
+x$absences[x$absences==24]<-1
+x$absences[x$absences==28]<-1
+x$absences[x$absences==5]<- 0
+x$absences[x$absences==13]<-1
+x$absences[x$absences==15]<-1
+x$absences[x$absences==22]<-1
+x$absences[x$absences==3]<- 0
+x$absences[x$absences==21]<-1
+x$absences[x$absences==1]<- 0
+x$absences[x$absences==75]<-1
+x$absences[x$absences==30]<-1
+x$absences[x$absences==19]<-1
+x$absences[x$absences==9]<- 0
+x$absences[x$absences==11]<-1
+x$absences[x$absences==38]<-1
+x$absences[x$absences==40]<-1
+x$absences[x$absences==23]<-1
+x$absences[x$absences==17]<-1
+
+unique(x$absences)
+
+x$absences<-as.factor(x$absences)
+
+train.set<- x[c(1:277), ]
+test.set <- x[c(278:395), ]
+
+#making model
+
+a = train.set[, -5] 
+b = train.set$G.avg
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+search_grid = expand.grid(cp = seq(.01, .50, .01))
+
+Tree = train(
+  x = a,
+  y = b,
+  method = 'rpart',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+Tree
+
+Tree$results %>% 
+  top_n(5, wt = Accuracy) %>%
+  arrange(desc(Accuracy))
+
+confusionMatrix(Tree)
+
+pred = predict(Tree, newdata = test.set)
+confusionMatrix(pred, train.set$G.avg)
+
+pred
+
+plot(Tree, uniform=TRUE,
+     main='Classification Tree')
+#####
+
+grid = expand.grid(.M=c(2,3,4,5,6,7,8,9,10), 
+                   .C=c(0.01,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50))
+
+train2 = train(G.avg ~ ., 
+                      data=train.set, 
+                      method='J48',
+                      trControl = trainControl(method = 'cv',number = 10),
+                      tuneGrid = grid)
+
+train2
+
+
+#plot
+
+plot(train2$finalModel, uniform=TRUE,
+     main='Classification Tree')
+
+#Matrix Table
+train2.pred = predict(train2, newdata = test.set)
+
+table(train2.pred, test.set$G.avg)
+
+# https://topepo.github.io/caret/measuring-performance.html
+confusionMatrix(data = train2, reference = test.set)
+
+####
+
+e<- data.frame(x$romantic, x$G.avg, x$internet, x$absences)
+
+tr.set<-e[1:277,]
+te.set<-e[278:395,]
+
+train3 = train(x.G.avg ~ ., 
+               data=tr.set, 
+               method='J48',
+               trControl = trainControl(method = 'cv',number = 10),
+               tuneGrid = grid)
+
+train3
+
+
+#plot
+
+plot(train3$finalModel, uniform=TRUE,
+     main='Classification Tree')
+
+#Matrix Table
+train2.pred = predict(train2, newdata = test.set)
+
+table(train2.pred, test.set$G.avg)
+
+# https://topepo.github.io/caret/measuring-performance.html
+confusionMatrix(data = train2, reference = test.set)
+```
+
+NAIVE BAYES
+```{r}
+library(tidyverse)
+library(rsample)  # data splitting
+library(caret)    # implementing with caret
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(gridExtra)
+library(alluvial)
+library(extrafont)
+```
+
+```{r}
+Math <- read.csv(choose.files()) |> 
+  select(-school,-G1,-G2,-G3) # remove the school column and grade avrage 
+
+head(Math)
+
+# convert categorical features to factors
+Math = Math |> 
+  mutate_if(is.character, as.factor)
+
+Math = Math |>
+mutate(GPA = case_when(
+  GPA >= 12 ~ 'Pass',
+  TRUE ~ 'Fail'
+)) 
+
+Math = Math |>
+mutate(absences = case_when(
+  absences >= 10 ~ 'Very High ',
+  absences >= 8 ~ 'High',
+  absences >= 6 ~ 'Medium',
+  absences >= 4 ~ 'Low',
+  absences >= 2 ~ 'Very Low'
+)) 
+
+
+
+
+Math$Walc <- as.factor(Math$Walc)      
+Math$Walc <- mapvalues(Math$Walc, 
+                              from = 1:5, 
+                              to = c("Very Low", "Low", "Medium", "High", "Very High"))
+
+Math$Dalc <- as.factor(Math$Dalc)      
+Math$Dalc <- mapvalues(Math$Dalc, 
+                       from = 1:5, 
+                       to = c("Very Low", "Low", "Medium", "High", "Very High"))
+
+Math$famrel <- as.factor(Math$famrel)      
+Math$famrel <- mapvalues(Math$famrel, 
+                       from = 1:5, 
+                       to = c("Very Low", "Low", "Medium", "High", "Very High"))
+
+Math$studytime <- as.factor(Math$studytime)      
+Math$studytime <- mapvalues(Math$studytime, 
+                         from = 1:4, 
+                         to = c("Very Low", "Low", "Medium", "High"))
+
+Math$health <- as.factor(Math$health)      
+Math$health <- mapvalues(Math$health, 
+                         from = 1:5, 
+                         to = c("Very Low", "Low", "Medium", "High", "Very High"))
+
+# Create training (70%) and test (30%) sets for the bank data.
+# Use set.seed for reproducibility
+set.seed(123)
+# note these are just different functions from the rsample package
+split = initial_split(Math, prop = .7)
+train = training(split)
+test  = testing(split)
+
+################################################################################################################################## - Famrel 
+
+
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not GPA, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$famrel
+
+
+# set up 5-fold cross validation procedure
+train_control = trainControl(
+  method = 'cv', 
+  number = 5
+)
+
+# a more advanced option, run 5 fold cross validation 10 times
+train_control_adv <- trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# train model
+nb.m1 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv
+)
+
+# results
+confusionMatrix(nb.m1)
+
+
+
+################################################################################################################################## - Romantic 
+
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not Gpa, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$romantic
+
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m2 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+# results
+confusionMatrix(nb.m2)
+################################################################################################################################## - Internet 
+
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not GPA, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$internet
+
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m3 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+# results
+confusionMatrix(nb.m3)
+
+################################################################################################################################## - Walc 
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not GPA, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$Walc
+
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m4 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+# results
+confusionMatrix(nb.m4)
+
+################################################################################################################################## - Dalc 
+
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not GPA, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$Dalc
+
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m5 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+# results
+confusionMatrix(nb.m5)
+################################################################################################################################## - StudyTime 
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not GPA, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$studytime
+
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m6 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+# results
+confusionMatrix(nb.m6)
+################################################################################################################################## - GPA 
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not GPA, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$GPA
+
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m7 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+# results
+confusionMatrix(nb.m7)
+################################################################################################################################## - Health 
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not GPA, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$health
+
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m8 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+# results
+confusionMatrix(nb.m8)
+################################################################################################################################## - Absences 
+features = setdiff(names(train), 'GPA') # this code provides all the names of train that are not GPA, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$absences
+
+
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+)
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m9 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+)
+
+# results
+confusionMatrix(nb.m9)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
